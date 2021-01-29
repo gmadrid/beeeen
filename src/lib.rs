@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Read;
 use std::iter::Peekable;
@@ -64,16 +65,15 @@ pub enum BEValue {
     BEString(Vec<u8>),
 }
 
-// TODO: this should be a Cow.
-fn maybe_string(bytes: &[u8], quoted: bool) -> String {
+fn maybe_string<'s>(bytes: &'s [u8], quoted: bool) -> Cow<'s, str> {
     let maybe = std::str::from_utf8(bytes);
     match maybe {
-        Err(_) => format!("[{} bytes]", bytes.len()),
+        Err(_) => Cow::Owned(format!("[{} bytes]", bytes.len())),
         Ok(s) => {
             if quoted {
-                format!("\"{}\"", s)
+                Cow::Owned(format!("\"{}\"", s))
             } else {
-                s.to_string()
+                Cow::Borrowed(s)
             }
         }
     }
@@ -293,7 +293,6 @@ where
     }
 
     fn read_string(&mut self) -> Result<BEValue> {
-        // TODO: deal with range check
         let len = self.read_raw_integer()?;
         if len < 0 {
             // This should never happen, because the beencode format doesn't allow it.
