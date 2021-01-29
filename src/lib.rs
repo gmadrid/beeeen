@@ -182,6 +182,13 @@ where
         }
     }
 
+    fn peek_char_no_eof(&mut self) -> Result<u8> {
+        match self.peeked_char()? {
+            PeekedValue::EOF => Err(BEError::EOFError),
+            PeekedValue::ASCII(ch) => Ok(ch),
+        }
+    }
+
     fn next_char_no_eof(&mut self) -> Result<u8> {
         match self.chars.next() {
             None => Err(BEError::EOFError),
@@ -223,9 +230,8 @@ where
 
         let mut dict = HashMap::new();
         loop {
-            let key = match self.peeked_char()? {
-                PeekedValue::EOF => return Err(BEError::EOFError),
-                PeekedValue::ASCII(E_CHAR) => {
+            let key = match self.peek_char_no_eof()? {
+                E_CHAR => {
                     self.next_char_no_eof()?;
                     break;
                 }
@@ -241,12 +247,12 @@ where
                 }
             };
 
-            let value = match self.peeked_char()? {
-                PeekedValue::EOF => return Err(BEError::EOFError),
-                PeekedValue::ASCII(E_CHAR) => {
+            let value = match self.peek_char_no_eof()? {
+                E_CHAR => {
                     return Err(BEError::MissingValueError(
+                        // TODO: make this maybe_string()?
                         String::from_utf8_lossy(&key).to_string(),
-                    ))
+                    ));
                 }
                 _ => {
                     let value = self.next_value()?;
@@ -268,10 +274,8 @@ where
 
         let mut result = Vec::default();
         loop {
-            let peek = self.peeked_char()?;
-            match peek {
-                PeekedValue::EOF => return Err(BEError::EOFError),
-                PeekedValue::ASCII(E_CHAR) => {
+            match self.peek_char_no_eof()? {
+                E_CHAR => {
                     self.next_char_no_eof()?;
                     break;
                 }
@@ -312,7 +316,6 @@ where
     }
 
     fn read_raw_integer(&mut self) -> Result<i64> {
-        // TODO: deal with range check
         let mut buf = [0u8; 100];
         let mut index = 0;
         let mut minus = 1i64;
@@ -325,14 +328,8 @@ where
         }
 
         loop {
-            match self.peeked_char()? {
-                PeekedValue::EOF => {
-                    if index == 0 {
-                        return Err(BEError::EOFError);
-                    }
-                    break;
-                }
-                PeekedValue::ASCII(ch) if ch.is_ascii_digit() => {
+            match self.peek_char_no_eof()? {
+                ch if ch.is_ascii_digit() => {
                     if index > 0 && lead_zero {
                         return Err(BEError::LeadZeroError);
                     }
