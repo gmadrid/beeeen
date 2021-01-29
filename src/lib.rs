@@ -136,6 +136,18 @@ impl BEValue {
     }
 }
 
+impl std::ops::Index<usize> for BEValue {
+    type Output = BEValue;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        if let BEValue::BEList(lst) = self {
+            &lst[index]
+        } else {
+            panic!("Cannot index in a non-BEList BEValue.");
+        }
+    }
+}
+
 // Peek returns a complicated Option<Result<u8>>.
 // This enum wraps that value in a slightly more descriptive type.
 #[derive(Debug)]
@@ -462,8 +474,9 @@ mod tests {
         let mut ber = reader("li-88e4:quuxi23ee");
         let value = ber.next_value().unwrap().unwrap();
         assert_eq!(value.len(), 3);
-
-        // test indexing and check values.
+        assert_eq!(value[0], BEValue::BEInteger(-88));
+        assert_eq!(value[1], BEValue::BEString(Vec::from("quux".as_bytes())));
+        assert_eq!(value[2], BEValue::BEInteger(23));
     }
 
     #[test]
