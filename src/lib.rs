@@ -16,6 +16,9 @@ pub enum BEError {
     #[error("keys must be strings, got {0:?}")]
     KeyNotString(BEValue),
 
+    #[error("key, \"{0:?}\", is not in lexicographical order")]
+    KeysOutOfOrder(String),
+
     #[error("Leading '0' not permitted in integer")]
     LeadZeroError,
 
@@ -179,6 +182,26 @@ impl std::ops::Index<usize> for BEValue {
     }
 }
 
+impl std::ops::Index<&[u8]> for BEValue {
+    type Output = BEValue;
+
+    fn index(&self, index: &[u8]) -> &Self::Output {
+        if let BEValue::BEDict(dict) = self {
+            &dict[index]
+        } else {
+            panic!("Cannot lookup in a non-BEDict BEValue.");
+        }
+    }
+}
+
+impl std::ops::Index<&str> for BEValue {
+    type Output = BEValue;
+
+    fn index(&self, index: &str) -> &Self::Output {
+        &self[index.as_bytes()]
+    }
+}
+
 // Peek returns a complicated Option<Result<u8>>.
 // This enum wraps that value in a slightly more descriptive type.
 #[derive(Debug)]
@@ -267,6 +290,7 @@ where
         self.check_prefix(D_CHAR)?;
 
         let mut dict = HashMap::new();
+        let mut last_key: Option<Vec<u8>> = None;
         loop {
             let key = match self.peek_char_no_eof()? {
                 E_CHAR => {
@@ -288,6 +312,15 @@ where
                 _ => self.next_value_no_eof()?,
             };
 
+            if let Some(last) = last_key {
+                if key <= last {
+                    // if key.as_ref() >= last {
+                    return Err(BEError::KeysOutOfOrder(
+                        String::from_utf8_lossy(&key).to_string(),
+                    ));
+                }
+            }
+            last_key = Some(key.clone());
             dict.insert(key, value);
         }
 
@@ -487,8 +520,6 @@ mod tests {
         let mut ber = reader("4:1234");
         let value = ber.next_value().unwrap().unwrap();
         assert_eq!(value.string(), "1234");
-
-        // TODO: add some error cases here.
     }
 
     #[test]
@@ -543,14 +574,38 @@ mod tests {
         let value = ber.next_value().unwrap().unwrap();
         assert_eq!(value.len(), 1);
 
-        let mut ber = reader("d3:two5:words2:toi32ee");
+        let mut ber = reader("d2:toi32e3:two5:wordse");
         let value = ber.next_value().unwrap().unwrap();
         assert_eq!(value.len(), 2);
+        assert_eq!(value["two"].string(), "words");
+        assert_eq!(value["to"].integer(), 32);
+    }
 
-        // Errors to check:
-        // - odd number of values,
-        // - keys out of order,
-        // - non string keys,
+    #[test]
+    fn test_keys_out_of_order() {
+        let mut ber = reader("d3:zzz5:words3:aaai7ee");
+        let value = ber.next_value();
+
+        assert_eq!(value, Err(BEError::KeysOutOfOrder("aaa".to_string())));
+    }
+
+    #[test]
+    fn test_missing_value() {
+        let mut ber = reader("d3:two5:words7:missinge");
+        let value = ber.next_value();
+
+        assert_eq!(
+            value,
+            Err(BEError::MissingValueError("missing".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_non_string_key() {
+        let mut ber = reader("di666e5:words7:secondei42ee");
+        let value = ber.next_value();
+
+        assert_eq!(value, Err(BEError::KeyNotString(BEValue::BEInteger(666))));
     }
 
     #[test]
@@ -594,5 +649,13 @@ mod tests {
         assert!(!make_integer().is_dict());
         assert!(!make_empty_list().is_dict());
         assert!(make_empty_dict().is_dict());
+    }
+
+    #[test]
+    fn test_illegal_prefix() {
+        let mut ber = reader("y");
+        let result = ber.next_value();
+
+        assert_eq!(result, Err(BEError::UnexpectedCharError('y')));
     }
 }
