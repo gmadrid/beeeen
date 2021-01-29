@@ -3,7 +3,7 @@ use std::io::Read;
 use std::iter::Peekable;
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum BEError {
     #[error("unexpected EOF")]
     EOFError,
@@ -53,6 +53,7 @@ const L_CHAR: u8 = 0x6c;
 const MINUS_SIGN: u8 = 0x2d;
 const ZERO_CHAR: u8 = 0x30;
 
+#[derive(PartialEq, Eq)]
 pub enum BEValue {
     BEDict(HashMap<Vec<u8>, BEValue>),
     BEInteger(i64),
@@ -435,9 +436,7 @@ mod tests {
     fn test_missing_colon() {
         let mut ber = reader("3foo");
         let value = ber.next_value();
-        println!("THEVAL: {:?}", value);
-        assert!(value.is_err());
-        assert!(false);
+        assert_eq!(Err(BEError::MissingSeparatorError(0x66, 0x3a)), value);
     }
 
     #[test]
