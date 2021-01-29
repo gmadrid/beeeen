@@ -198,6 +198,13 @@ where
         }
     }
 
+    fn next_value_no_eof(&mut self) -> Result<BEValue> {
+        match self.next_value()? {
+            None => Err(BEError::EOFError),
+            Some(v) => Ok(v),
+        }
+    }
+
     pub fn next_value(&mut self) -> Result<Option<BEValue>> {
         match self.peeked_char()? {
             PeekedValue::EOF => Ok(None),
@@ -235,16 +242,10 @@ where
                     self.next_char_no_eof()?;
                     break;
                 }
-                _ => {
-                    let value = self.next_value()?;
-                    match value {
-                        None => return Err(BEError::EOFError),
-                        Some(BEValue::BEString(s)) => s,
-                        Some(v) => {
-                            return Err(BEError::KeyNotString(v));
-                        }
-                    }
-                }
+                _ => match self.next_value_no_eof()? {
+                    BEValue::BEString(s) => s,
+                    v => return Err(BEError::KeyNotString(v)),
+                },
             };
 
             let value = match self.peek_char_no_eof()? {
@@ -254,13 +255,7 @@ where
                         String::from_utf8_lossy(&key).to_string(),
                     ));
                 }
-                _ => {
-                    let value = self.next_value()?;
-                    match value {
-                        None => return Err(BEError::EOFError),
-                        Some(v) => v,
-                    }
-                }
+                _ => self.next_value_no_eof()?,
             };
 
             dict.insert(key, value);
@@ -279,13 +274,7 @@ where
                     self.next_char_no_eof()?;
                     break;
                 }
-                _ => {
-                    let value = self.next_value()?;
-                    match value {
-                        None => return Err(BEError::EOFError),
-                        Some(v) => result.push(v),
-                    }
-                }
+                _ => result.push(self.next_value_no_eof()?),
             }
         }
 
