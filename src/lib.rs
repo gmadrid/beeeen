@@ -111,6 +111,34 @@ impl BEValue {
         }
     }
 
+    pub fn is_string(&self) -> bool {
+        match self {
+            BEValue::BEString(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_integer(&self) -> bool {
+        match self {
+            BEValue::BEInteger(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_list(&self) -> bool {
+        match self {
+            BEValue::BEList(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_dict(&self) -> bool {
+        match self {
+            BEValue::BEDict(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -357,6 +385,26 @@ mod tests {
         BEReader::new(s.as_bytes())
     }
 
+    fn value_for_string(s: &str) -> BEValue {
+        BEReader::new(s.as_bytes()).next_value().unwrap().unwrap()
+    }
+
+    fn make_string() -> BEValue {
+        value_for_string("4:quux")
+    }
+
+    fn make_integer() -> BEValue {
+        value_for_string("i42e")
+    }
+
+    fn make_empty_list() -> BEValue {
+        value_for_string("le")
+    }
+
+    fn make_empty_dict() -> BEValue {
+        value_for_string("de")
+    }
+
     #[test]
     fn test_empty() {
         let mut ber = BEReader::new("".as_bytes());
@@ -479,9 +527,9 @@ mod tests {
         let mut ber = reader("li-88e4:quuxi23ee");
         let value = ber.next_value().unwrap().unwrap();
         assert_eq!(value.len(), 3);
-        assert_eq!(value[0], BEValue::BEInteger(-88));
-        assert_eq!(value[1], BEValue::BEString(Vec::from("quux".as_bytes())));
-        assert_eq!(value[2], BEValue::BEInteger(23));
+        assert_eq!(value[0].integer(), -88);
+        assert_eq!(value[1].string(), "quux");
+        assert_eq!(value[2].integer(), 23);
     }
 
     #[test]
@@ -514,5 +562,37 @@ mod tests {
         assert_eq!(value[0][0].string(), "moore");
         assert_eq!(value[1][0].string(), "bar");
         assert_eq!(value[1][1].string(), "quux");
+    }
+
+    #[test]
+    fn test_is_string() {
+        assert!(make_string().is_string());
+        assert!(!make_integer().is_string());
+        assert!(!make_empty_list().is_string());
+        assert!(!make_empty_dict().is_string());
+    }
+
+    #[test]
+    fn test_is_integer() {
+        assert!(!make_string().is_integer());
+        assert!(make_integer().is_integer());
+        assert!(!make_empty_list().is_integer());
+        assert!(!make_empty_dict().is_integer());
+    }
+
+    #[test]
+    fn test_is_list() {
+        assert!(!make_string().is_list());
+        assert!(!make_integer().is_list());
+        assert!(make_empty_list().is_list());
+        assert!(!make_empty_dict().is_list());
+    }
+
+    #[test]
+    fn test_is_dict() {
+        assert!(!make_string().is_dict());
+        assert!(!make_integer().is_dict());
+        assert!(!make_empty_list().is_dict());
+        assert!(make_empty_dict().is_dict());
     }
 }
