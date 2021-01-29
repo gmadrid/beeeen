@@ -189,13 +189,20 @@ where
         }
     }
 
-    fn check_prefix(&mut self, expected: u8) -> Result<()> {
-        let prefix = self.next_char_no_eof()?;
-        if expected != prefix {
-            Err(BEError::MissingPrefixError(prefix, expected))
+    fn check_next_char<ErrFn>(&mut self, expected: u8, errf: ErrFn) -> Result<()>
+    where
+        ErrFn: FnOnce(u8, u8) -> BEError,
+    {
+        let ch = self.next_char_no_eof()?;
+        if expected != ch {
+            Err(errf(ch, expected))
         } else {
             Ok(())
         }
+    }
+
+    fn check_prefix(&mut self, expected: u8) -> Result<()> {
+        self.check_next_char(expected, BEError::MissingPrefixError)
     }
 
     fn read_dict(&mut self) -> Result<BEValue> {
@@ -272,10 +279,7 @@ where
         self.check_prefix(I_CHAR)?;
 
         let value = self.read_raw_integer()?;
-        let suffix = self.next_char_no_eof()?;
-        if E_CHAR != suffix {
-            return Err(BEError::MissingSuffixError(suffix, E_CHAR));
-        }
+        self.check_next_char(E_CHAR, BEError::MissingSuffixError)?;
         Ok(BEValue::BEInteger(value))
     }
 
@@ -283,10 +287,7 @@ where
         // TODO: deal with range check
         let len = self.read_raw_integer()? as usize;
 
-        let separator = self.next_char_no_eof()?;
-        if COLON_CHAR != separator {
-            return Err(BEError::MissingSeparatorError(separator, COLON_CHAR));
-        }
+        self.check_next_char(COLON_CHAR, BEError::MissingSeparatorError)?;
 
         let mut buf = [0u8; 100000];
         #[allow(clippy::needless_range_loop)]
@@ -428,6 +429,15 @@ mod tests {
         assert_eq!(value.string().unwrap(), "1234");
 
         // TODO: add some error cases here.
+    }
+
+    #[test]
+    fn test_missing_colon() {
+        let mut ber = reader("3foo");
+        let value = ber.next_value();
+        println!("THEVAL: {:?}", value);
+        assert!(value.is_err());
+        assert!(false);
     }
 
     #[test]
