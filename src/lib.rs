@@ -33,6 +33,9 @@ pub enum BEError {
     #[error("negative zero not permitted")]
     NegativeZeroError,
 
+    #[error("negative string lengths are not permitted")]
+    NegativeStringLength(i64),
+
     #[error("ParseIntError: {0}")]
     ParseIntError(#[from] std::num::ParseIntError),
 
@@ -291,7 +294,14 @@ where
 
     fn read_string(&mut self) -> Result<BEValue> {
         // TODO: deal with range check
-        let len = self.read_raw_integer()? as usize;
+        let len = self.read_raw_integer()?;
+        if len < 0 {
+            // This should never happen, because the beencode format doesn't allow it.
+            // (Strings must start with a digit which precludes having a '-'.)
+            // But, let's check for it anyway.
+            return Err(BEError::NegativeStringLength(len));
+        }
+        let len = len as usize;
 
         self.check_next_char(COLON_CHAR, BEError::MissingSeparatorError)?;
 
@@ -440,6 +450,17 @@ mod tests {
         let mut ber = reader("3foo");
         let value = ber.next_value();
         assert_eq!(Err(BEError::MissingSeparatorError(0x66, 0x3a)), value);
+    }
+
+    #[test]
+    fn test_negative_string_length() {
+        let mut ber = reader("-10:impossible_");
+
+        // The beencode format makes this impossible, so we have to test it with the
+        // private helper function.
+        let value = ber.read_string();
+
+        assert_eq!(Err(BEError::NegativeStringLength(-10)), value);
     }
 
     #[test]
