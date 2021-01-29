@@ -30,6 +30,9 @@ pub enum BEError {
     #[error("key, '{0}', is missing a value")]
     MissingValueError(String),
 
+    #[error("negative zero not permitted")]
+    NegativeZeroError,
+
     #[error("ParseIntError: {0}")]
     ParseIntError(#[from] std::num::ParseIntError),
 
@@ -50,27 +53,62 @@ const L_CHAR: u8 = 0x6c;
 const MINUS_SIGN: u8 = 0x2d;
 const ZERO_CHAR: u8 = 0x30;
 
-#[derive(Debug)]
 pub enum BEValue {
-    BEDict(HashMap<String, BEValue>),
-    BEInteger(i32),
+    BEDict(HashMap<Vec<u8>, BEValue>),
+    BEInteger(i64),
     BEList(Vec<BEValue>),
-    BEString(String),
+    BEString(Vec<u8>),
+}
+
+// TODO: this should be a Cow.
+fn maybe_string(bytes: &[u8], quoted: bool) -> String {
+    let maybe = std::str::from_utf8(bytes);
+    match maybe {
+        Err(_) => format!("[{} bytes]", bytes.len()),
+        Ok(s) => {
+            if quoted {
+                format!("\"{}\"", s)
+            } else {
+                s.to_string()
+            }
+        }
+    }
+}
+
+// We implement Debug by hand so that we can get the two-way treatment of BEString:
+// if it's a valid UTF-8 string, we output a string. If not, then we just output the string length.
+impl std::fmt::Debug for BEValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BEValue::BEDict(hsh) => f
+                .debug_map()
+                // TODO: We should probably sort the keys before output.
+                .entries(hsh.iter().map(|(k, v)| (maybe_string(k, false), v)))
+                .finish(),
+            BEValue::BEInteger(int) => f.write_str(&format!("{}", int)),
+            BEValue::BEString(s) => f.write_str(&maybe_string(s, true)),
+            BEValue::BEList(lst) => f.debug_list().entries(lst.iter()).finish(),
+        }
+    }
 }
 
 impl BEValue {
-    pub fn string(&self) -> String {
+    pub fn string(&self) -> Result<&str> {
         match self {
-            BEValue::BEString(s) => s.clone(),
+            BEValue::BEString(s) => Ok(std::str::from_utf8(s)?),
             _ => panic!("string() called on non-string"),
         }
     }
 
-    pub fn integer(&self) -> i32 {
+    pub fn integer(&self) -> i64 {
         match self {
             BEValue::BEInteger(i) => *i,
             _ => panic!("integer() called on non-integer"),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn len(&self) -> usize {
@@ -79,6 +117,20 @@ impl BEValue {
             BEValue::BEString(s) => s.len(),
             BEValue::BEList(l) => l.len(),
             BEValue::BEDict(d) => d.len(),
+        }
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &Vec<u8>> {
+        match self {
+            BEValue::BEDict(d) => d.keys(),
+            _ => panic!("Not a dict"),
+        }
+    }
+
+    pub fn get(&self, key: &[u8]) -> Option<&BEValue> {
+        match self {
+            BEValue::BEDict(d) => d.get(key),
+            _ => panic!("Not a dict"),
         }
     }
 }
@@ -137,18 +189,26 @@ where
         }
     }
 
-    fn read_dict(&mut self) -> Result<BEValue> {
+    fn check_prefix(&mut self, expected: u8) -> Result<()> {
         let prefix = self.next_char_no_eof()?;
-        if D_CHAR != prefix {
-            return Err(BEError::MissingPrefixError(prefix, D_CHAR));
+        if expected != prefix {
+            Err(BEError::MissingPrefixError(prefix, expected))
+        } else {
+            Ok(())
         }
+    }
+
+    fn read_dict(&mut self) -> Result<BEValue> {
+        self.check_prefix(D_CHAR)?;
 
         let mut dict = HashMap::new();
-
         loop {
             let key = match self.peeked_char()? {
                 PeekedValue::EOF => return Err(BEError::EOFError),
-                PeekedValue::ASCII(E_CHAR) => break,
+                PeekedValue::ASCII(E_CHAR) => {
+                    self.next_char_no_eof()?;
+                    break;
+                }
                 _ => {
                     let value = self.next_value()?;
                     match value {
@@ -163,7 +223,11 @@ where
 
             let value = match self.peeked_char()? {
                 PeekedValue::EOF => return Err(BEError::EOFError),
-                PeekedValue::ASCII(E_CHAR) => return Err(BEError::MissingValueError(key)),
+                PeekedValue::ASCII(E_CHAR) => {
+                    return Err(BEError::MissingValueError(
+                        String::from_utf8_lossy(&key).to_string(),
+                    ))
+                }
                 _ => {
                     let value = self.next_value()?;
                     match value {
@@ -180,17 +244,17 @@ where
     }
 
     fn read_list(&mut self) -> Result<BEValue> {
-        let prefix = self.next_char_no_eof()?;
-        if L_CHAR != prefix {
-            return Err(BEError::MissingPrefixError(prefix, L_CHAR));
-        }
+        self.check_prefix(L_CHAR)?;
 
         let mut result = Vec::default();
         loop {
             let peek = self.peeked_char()?;
             match peek {
                 PeekedValue::EOF => return Err(BEError::EOFError),
-                PeekedValue::ASCII(E_CHAR) => break,
+                PeekedValue::ASCII(E_CHAR) => {
+                    self.next_char_no_eof()?;
+                    break;
+                }
                 _ => {
                     let value = self.next_value()?;
                     match value {
@@ -205,12 +269,9 @@ where
     }
 
     fn read_integer(&mut self) -> Result<BEValue> {
-        let prefix = self.next_char_no_eof()?;
-        if I_CHAR != prefix {
-            return Err(BEError::MissingPrefixError(prefix, I_CHAR));
-        }
-        let value = self.read_raw_integer()?;
+        self.check_prefix(I_CHAR)?;
 
+        let value = self.read_raw_integer()?;
         let suffix = self.next_char_no_eof()?;
         if E_CHAR != suffix {
             return Err(BEError::MissingSuffixError(suffix, E_CHAR));
@@ -227,20 +288,20 @@ where
             return Err(BEError::MissingSeparatorError(separator, COLON_CHAR));
         }
 
-        let mut buf = [0u8; 256];
+        let mut buf = [0u8; 100000];
+        #[allow(clippy::needless_range_loop)]
         for index in 0..len {
             buf[index] = self.next_char_no_eof()?;
         }
-        Ok(BEValue::BEString(
-            std::str::from_utf8(&buf[0..len])?.to_string(),
-        ))
+
+        Ok(BEValue::BEString((&buf[0..len]).into()))
     }
 
-    fn read_raw_integer(&mut self) -> Result<i32> {
+    fn read_raw_integer(&mut self) -> Result<i64> {
         // TODO: deal with range check
         let mut buf = [0u8; 100];
         let mut index = 0;
-        let mut minus = 1i32;
+        let mut minus = 1i64;
         let mut lead_zero = false;
 
         // Check for minus sign.
@@ -272,7 +333,10 @@ where
             }
         }
 
-        let value: i32 = str::parse(std::str::from_utf8(&buf[0..index])?)?;
+        let value: i64 = str::parse(std::str::from_utf8(&buf[0..index])?)?;
+        if value == 0 && minus < 0 {
+            return Err(BEError::NegativeZeroError);
+        }
         Ok(value * minus)
     }
 }
@@ -330,31 +394,38 @@ mod tests {
     }
 
     #[test]
+    fn test_negative_zero() {
+        let mut ber = reader("i-0e");
+        let value = ber.next_value();
+        assert!(value.is_err());
+    }
+
+    #[test]
     fn test_read_string() {
         // Empty string
         let mut ber = BEReader::new("0:".as_bytes());
         let value = ber.next_value().unwrap();
-        assert_eq!(value.unwrap().string(), "");
+        assert_eq!(value.unwrap().string().unwrap(), "");
 
         // One digit length
         let mut ber = BEReader::new("7:unicorn".as_bytes());
         let value = ber.next_value().unwrap();
-        assert_eq!(value.unwrap().string(), "unicorn");
+        assert_eq!(value.unwrap().string().unwrap(), "unicorn");
 
         // Two digit length
         let mut ber = BEReader::new("12:unicornfarts".as_bytes());
         let value = ber.next_value().unwrap();
-        assert_eq!(value.unwrap().string(), "unicornfarts");
+        assert_eq!(value.unwrap().string().unwrap(), "unicornfarts");
 
         // String longer than length
         let mut ber = BEReader::new("11:unicornfarts".as_bytes());
         let value = ber.next_value().unwrap();
-        assert_eq!(value.unwrap().string(), "unicornfart");
+        assert_eq!(value.unwrap().string().unwrap(), "unicornfart");
 
         // String containing a number
         let mut ber = reader("4:1234");
         let value = ber.next_value().unwrap().unwrap();
-        assert_eq!(value.string(), "1234");
+        assert_eq!(value.string().unwrap(), "1234");
 
         // TODO: add some error cases here.
     }
@@ -400,5 +471,14 @@ mod tests {
         // - odd number of values,
         // - keys out of order,
         // - non string keys,
+    }
+
+    #[test]
+    fn test_list_of_lists() {
+        let mut ber = reader("ll5:mooreel3:bar4:quuxee");
+        let value = ber.next_value().unwrap().unwrap();
+        assert_eq!(2, value.len())
+
+        // TODO: deep value check.
     }
 }
