@@ -384,7 +384,12 @@ mod tests {
         // Missing suffix.
         let mut ber = reader("i32");
         let value = ber.next_value();
-        assert!(value.is_err());
+        assert_eq!(Err(BEError::EOFError), value);
+
+        // Missing suffix with more chars.
+        let mut ber = reader("i32i33e");
+        let value = ber.next_value();
+        assert_eq!(Err(BEError::MissingSuffixError(0x69, E_CHAR)), value);
     }
 
     #[test]
@@ -392,14 +397,14 @@ mod tests {
         // Leading zero not allowed.
         let mut ber = reader("i032e");
         let value = ber.next_value();
-        assert!(value.is_err());
+        assert_eq!(Err(BEError::LeadZeroError), value);
     }
 
     #[test]
     fn test_negative_zero() {
         let mut ber = reader("i-0e");
         let value = ber.next_value();
-        assert!(value.is_err());
+        assert_eq!(Err(BEError::NegativeZeroError), value);
     }
 
     #[test]
