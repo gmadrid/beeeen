@@ -97,9 +97,9 @@ impl std::fmt::Debug for BEValue {
 }
 
 impl BEValue {
-    pub fn string(&self) -> Result<&str> {
+    pub fn string(&self) -> Cow<str> {
         match self {
-            BEValue::BEString(s) => Ok(std::str::from_utf8(s)?),
+            BEValue::BEString(s) => String::from_utf8_lossy(s),
             _ => panic!("string() called on non-string"),
         }
     }
@@ -254,7 +254,6 @@ where
             let value = match self.peek_char_no_eof()? {
                 E_CHAR => {
                     return Err(BEError::MissingValueError(
-                        // TODO: make this maybe_string()?
                         String::from_utf8_lossy(&key).to_string(),
                     ));
                 }
@@ -419,27 +418,27 @@ mod tests {
         // Empty string
         let mut ber = BEReader::new("0:".as_bytes());
         let value = ber.next_value().unwrap();
-        assert_eq!(value.unwrap().string().unwrap(), "");
+        assert_eq!(value.unwrap().string(), "");
 
         // One digit length
         let mut ber = BEReader::new("7:unicorn".as_bytes());
         let value = ber.next_value().unwrap();
-        assert_eq!(value.unwrap().string().unwrap(), "unicorn");
+        assert_eq!(value.unwrap().string(), "unicorn");
 
         // Two digit length
         let mut ber = BEReader::new("12:unicornfarts".as_bytes());
         let value = ber.next_value().unwrap();
-        assert_eq!(value.unwrap().string().unwrap(), "unicornfarts");
+        assert_eq!(value.unwrap().string(), "unicornfarts");
 
         // String longer than length
         let mut ber = BEReader::new("11:unicornfarts".as_bytes());
         let value = ber.next_value().unwrap();
-        assert_eq!(value.unwrap().string().unwrap(), "unicornfart");
+        assert_eq!(value.unwrap().string(), "unicornfart");
 
         // String containing a number
         let mut ber = reader("4:1234");
         let value = ber.next_value().unwrap().unwrap();
-        assert_eq!(value.string().unwrap(), "1234");
+        assert_eq!(value.string(), "1234");
 
         // TODO: add some error cases here.
     }
@@ -510,8 +509,10 @@ mod tests {
     fn test_list_of_lists() {
         let mut ber = reader("ll5:mooreel3:bar4:quuxee");
         let value = ber.next_value().unwrap().unwrap();
-        assert_eq!(2, value.len())
+        assert_eq!(2, value.len());
 
-        // TODO: deep value check.
+        assert_eq!(value[0][0].string(), "moore");
+        assert_eq!(value[1][0].string(), "bar");
+        assert_eq!(value[1][1].string(), "quux");
     }
 }
