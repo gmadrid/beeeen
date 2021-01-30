@@ -425,6 +425,44 @@ where
 mod tests {
     use super::*;
 
+    macro_rules! assert_error0 {
+        ($e:expr, $p:path) => {
+            match $e {
+                Err($p) => {}
+                _ => {
+                    assert!(false)
+                }
+            }
+        };
+    }
+
+    macro_rules! assert_error1 {
+        ($e:expr, $p:path, $v:expr) => {
+            match $e {
+                Err($p(v)) => {
+                    assert_eq!(v, $v);
+                }
+                _ => {
+                    assert!(false);
+                }
+            }
+        };
+    }
+
+    macro_rules! assert_error2 {
+        ($e:expr, $p:path, $v1:expr, $v2:expr) => {
+            match $e {
+                Err($p(v1, v2)) => {
+                    assert_eq!(v1, $v1);
+                    assert_eq!(v2, $v2);
+                }
+                _ => {
+                    assert!(false)
+                }
+            }
+        };
+    }
+
     fn reader(s: &'static str) -> BEReader<impl Read> {
         BEReader::new(s.as_bytes())
     }
@@ -482,12 +520,12 @@ mod tests {
         // Missing suffix.
         let mut ber = reader("i32");
         let value = ber.next_value();
-        //FIX assert_eq!(Err(BEError::EOFError), value);
+        assert_error0!(value, BEError::EOFError);
 
         // Missing suffix with more chars.
         let mut ber = reader("i32i33e");
         let value = ber.next_value();
-        //FIX assert_eq!(Err(BEError::MissingSuffixError(0x69, E_CHAR)), value);
+        assert_error2!(value, BEError::MissingSuffixError, 0x69, E_CHAR);
     }
 
     #[test]
@@ -495,14 +533,14 @@ mod tests {
         // Leading zero not allowed.
         let mut ber = reader("i032e");
         let value = ber.next_value();
-        //FIX assert_eq!(Err(BEError::LeadZeroError), value);
+        assert_error0!(value, BEError::LeadZeroError);
     }
 
     #[test]
     fn test_negative_zero() {
         let mut ber = reader("i-0e");
         let value = ber.next_value();
-        //FIX assert_eq!(Err(BEError::NegativeZeroError), value);
+        assert_error0!(value, BEError::NegativeZeroError);
     }
 
     #[test]
@@ -537,7 +575,7 @@ mod tests {
     fn test_missing_colon() {
         let mut ber = reader("3foo");
         let value = ber.next_value();
-        //FIX assert_eq!(Err(BEError::MissingSeparatorError(0x66, 0x3a)), value);
+        assert_error2!(value, BEError::MissingSeparatorError, 0x66, 0x3a);
     }
 
     #[test]
@@ -548,7 +586,7 @@ mod tests {
         // private helper function.
         let value = ber.read_string();
 
-        //FIX assert_eq!(Err(BEError::NegativeStringLength(-10)), value);
+        assert_error1!(value, BEError::NegativeStringLength, -10);
     }
 
     #[test]
@@ -597,7 +635,7 @@ mod tests {
         let mut ber = reader("d3:zzz5:words3:aaai7ee");
         let value = ber.next_value();
 
-        //FIX assert_eq!(value, Err(BEError::KeysOutOfOrder("aaa".to_string())));
+        assert_error1!(value, BEError::KeysOutOfOrder, "aaa");
     }
 
     #[test]
@@ -605,10 +643,7 @@ mod tests {
         let mut ber = reader("d3:two5:words7:missinge");
         let value = ber.next_value();
 
-        //FIX assert_eq!(
-        //     value,
-        //     Err(BEError::MissingValueError("missing".to_string()))
-        // );
+        assert_error1!(value, BEError::MissingValueError, "missing");
     }
 
     #[test]
@@ -616,7 +651,7 @@ mod tests {
         let mut ber = reader("di666e5:words7:secondei42ee");
         let value = ber.next_value();
 
-        //FIX assert_eq!(value, Err(BEError::KeyNotString(BEValue::BEInteger(666))));
+        assert_error1!(value, BEError::KeyNotString, BEValue::BEInteger(666));
     }
 
     #[test]
@@ -666,7 +701,6 @@ mod tests {
     fn test_illegal_prefix() {
         let mut ber = reader("y");
         let result = ber.next_value();
-
-        //FIX assert_eq!(result, Err(BEError::UnexpectedCharError('y')));
+        assert_error1!(result, BEError::UnexpectedCharError, 'y');
     }
 }
