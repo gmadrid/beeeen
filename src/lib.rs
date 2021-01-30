@@ -87,11 +87,14 @@ fn maybe_string<'s>(bytes: &'s [u8], quoted: bool) -> Cow<'s, str> {
 impl std::fmt::Debug for BEValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BEValue::BEDict(hsh) => f
-                .debug_map()
-                // TODO: We should probably sort the keys before output.
-                .entries(hsh.iter().map(|(k, v)| (maybe_string(k, false), v)))
-                .finish(),
+            BEValue::BEDict(hsh) => {
+                // Sort the keys first, since beencoded dicts store keys in lex order.
+                let mut key_vec = hsh.iter().collect::<Vec<(&Vec<u8>, &BEValue)>>();
+                key_vec.sort_by(|&(k1, _), &(k2, _)| k1.cmp(k2));
+                f.debug_map()
+                    .entries(key_vec.iter().map(|(k, v)| (maybe_string(k, false), v)))
+                    .finish()
+            }
             BEValue::BEInteger(int) => f.write_str(&format!("{}", int)),
             BEValue::BEString(s) => f.write_str(&maybe_string(s, true)),
             BEValue::BEList(lst) => f.debug_list().entries(lst.iter()).finish(),
