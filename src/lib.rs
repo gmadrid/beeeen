@@ -136,6 +136,11 @@ impl BEValue {
         self.len() == 0
     }
 
+    /// Returns the length of the value, defined as:
+    ///   Integer: 1
+    ///   String:  string length
+    ///   List:    number of elements in the list
+    ///   Dict:    number of key,value pairs in the dict.
     pub fn len(&self) -> usize {
         match self {
             BEValue::BEInteger(_) => 1,
