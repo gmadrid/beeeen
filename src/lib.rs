@@ -157,9 +157,9 @@ impl BEValue {
         }
     }
 
-    pub fn get(&self, key: &[u8]) -> Option<&BEValue> {
+    pub fn get(&self, key: impl AsRef<[u8]>) -> Option<&BEValue> {
         match self {
-            BEValue::BEDict(d) => d.get(key),
+            BEValue::BEDict(d) => d.get(key.as_ref()),
             _ => panic!("Not a dict"),
         }
     }

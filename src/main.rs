@@ -8,7 +8,7 @@ fn main() {
 
     println!("TOP: {:?}", value);
 
-    let value = value.get("announce-list".as_bytes()).unwrap();
+    let value = value.get("announce-list").unwrap();
 
     println!("VALUE: {:?}", value);
 }
