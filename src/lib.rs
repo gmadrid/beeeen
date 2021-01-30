@@ -67,7 +67,7 @@ pub enum BEValue {
     BEString(Vec<u8>),
 }
 
-fn maybe_string<'s>(bytes: &'s [u8], quoted: bool) -> Cow<'s, str> {
+fn maybe_string(bytes: &[u8], quoted: bool) -> Cow<str> {
     let maybe = std::str::from_utf8(bytes);
     match maybe {
         Err(_) => Cow::Owned(format!("[{} bytes]", bytes.len())),
@@ -117,31 +117,19 @@ impl BEValue {
     }
 
     pub fn is_string(&self) -> bool {
-        match self {
-            BEValue::BEString(_) => true,
-            _ => false,
-        }
+        matches!(self, BEValue::BEString(_))
     }
 
     pub fn is_integer(&self) -> bool {
-        match self {
-            BEValue::BEInteger(_) => true,
-            _ => false,
-        }
+        matches!(self, BEValue::BEInteger(_))
     }
 
     pub fn is_list(&self) -> bool {
-        match self {
-            BEValue::BEList(_) => true,
-            _ => false,
-        }
+        matches!(self, BEValue::BEList(_))
     }
 
     pub fn is_dict(&self) -> bool {
-        match self {
-            BEValue::BEDict(_) => true,
-            _ => false,
-        }
+        matches!(self, BEValue::BEDict(_))
     }
 
     pub fn is_empty(&self) -> bool {
