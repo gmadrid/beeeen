@@ -3,6 +3,9 @@ name = "beeenn"
 version = "0.1.0"
 authors = ["George Madrid <gmadrid@gmail.com>"]
 edition = "2018"
+description = "A simple library for reading beencoded files."
+license = "MIT"
+repository = "https://github.com/gmadrid/beeeen"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
