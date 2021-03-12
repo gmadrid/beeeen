@@ -1,4 +1,4 @@
-use serde::de::{self, SeqAccess};
+use serde::de::{self, MapAccess, SeqAccess};
 use serde::{forward_to_deserialize_any, Deserialize};
 
 use super::{Error, Result};
@@ -53,19 +53,14 @@ impl<'de> Deserializer<'de> {
         Ok(std::str::from_utf8(bytes)?)
     }
 
+    // parse raw_integer should NOT check/consume the terminating 'e'
     fn parse_raw_integer(&mut self) -> Result<u64> {
         // TODO: detect unexpected '0' prefix.
         // TODO: detect empty string.
         let mut val = 0u64;
         loop {
-            let b = self.peek_byte();
-            if b.is_err() {
-                if let Err(Error::Eof) = b {
-                    break;
-                }
-            }
-            let byte = b?;
-            if !byte.is_ascii_digit() {
+            let b = self.peek_byte()?;
+            if !b.is_ascii_digit() {
                 break;
             }
             val = val * 10 + (self.next_byte()? - b'0') as u64
@@ -83,14 +78,14 @@ impl<'de> Deserializer<'de> {
             return Err(Error::UnexpectedPrefix(b as char, 'i'));
         }
 
-        self.parse_raw_integer()
+        let val = self.parse_raw_integer()?;
+        if self.next_byte()? != b'e' {
+            return Err(Error::ExpectedNumEnd);
+        }
+        Ok(val)
     }
 
     fn parse_signed(&mut self) -> Result<i64> {
-        if self.peek_byte()? == b'-' {
-            return Err(Error::UnexpectedSigned);
-        }
-
         let b = self.next_byte()?;
         if b != b'i' {
             return Err(Error::UnexpectedPrefix(b as char, 'i'));
@@ -104,22 +99,28 @@ impl<'de> Deserializer<'de> {
             1
         };
 
-        // TODO: do this with parse_raw_integer
-        // TODO: detect unexpected '0' prefix.
-        // TODO: detect empty string.
-        let mut val = 0i64;
-        loop {
-            let b = self.peek_byte();
-            if b.is_err() {
-                if let Err(Error::Eof) = b {
-                    break;
-                } else {
-                    b?;
-                }
-            }
-            val = val * 10 + (self.next_byte()? - b'0') as i64
+        let uval = self.parse_raw_integer()?;
+        if self.next_byte()? != b'e' {
+            return Err(Error::ExpectedNumEnd);
         }
-        Ok(multiplier * val)
+        Ok(multiplier * uval as i64)
+        // // TODO: do this with parse_raw_integer
+        // // TODO: detect unexpected '0' prefix.
+        // // TODO: detect empty string.
+        // // TODO: check for overflow.
+        // let mut val = 0i64;
+        // loop {
+        //     let b = self.peek_byte();
+        //     if b.is_err() {
+        //         if let Err(Error::Eof) = b {
+        //             break;
+        //         } else {
+        //             b?;
+        //         }
+        //     }
+        //     val = val * 10 + (self.next_byte()? - b'0') as i64
+        // }
+        // Ok(multiplier * val)
     }
 }
 
@@ -264,11 +265,21 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         todo!()
     }
 
-    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_map<V>(mut self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        todo!()
+        if self.next_byte()? != b'd' {
+            return Err(Error::ExpectedMap);
+        }
+
+        let value = visitor.visit_map(Map::new(&mut self))?;
+        println!("ITAIL: {:?}", std::str::from_utf8(self.bytes).unwrap());
+
+        if self.next_byte()? != b'e' {
+            return Err(Error::ExpectedMapEnd);
+        }
+        Ok(value)
     }
 
     fn deserialize_struct<V>(
@@ -299,7 +310,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: de::Visitor<'de>,
     {
-        todo!()
+        println!("XXX: {:?}", std::str::from_utf8(self.bytes).unwrap());
+        self.deserialize_str(visitor)
     }
 
     fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value>
@@ -332,5 +344,45 @@ impl<'de, 'a> SeqAccess<'de> for List<'a, 'de> {
         }
 
         seed.deserialize(&mut *self.de).map(Some)
+    }
+}
+
+struct Map<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
+}
+
+impl<'a, 'de> Map<'a, 'de> {
+    fn new(de: &'a mut Deserializer<'de>) -> Self {
+        Map { de }
+    }
+}
+
+impl<'de, 'a> MapAccess<'de> for Map<'a, 'de> {
+    type Error = Error;
+
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
+    where
+        K: de::DeserializeSeed<'de>,
+    {
+        if self.de.peek_byte()? == b'e' {
+            return Ok(None);
+        }
+        println!("KTAIL: {:?}", std::str::from_utf8(self.de.bytes).unwrap());
+
+        seed.deserialize(&mut *self.de).map(Some)
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
+    where
+        V: de::DeserializeSeed<'de>,
+    {
+        println!("VTAIL: {:?}", std::str::from_utf8(self.de.bytes).unwrap());
+        // TODO: should I check for 'e' here?
+        let r = seed.deserialize(&mut *self.de);
+        println!(
+            "VTAILPOST: {:?}",
+            std::str::from_utf8(self.de.bytes).unwrap()
+        );
+        r
     }
 }
