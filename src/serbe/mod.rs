@@ -29,6 +29,9 @@ pub enum SerbeError {
     #[error("expected colon, ':', to separate length from bytes. Found {0}")]
     MissingColon(u8),
 
+    #[error("every number must have at least one digit")]
+    NoDigitsInNumber,
+
     #[error("trailing input remains after deserializing")]
     TrailingInput,
 
@@ -38,8 +41,11 @@ pub enum SerbeError {
     #[error("expected {1}, found: {0}")]
     UnexpectedPrefix(char, char),
 
-    #[error("unexpected negative sign for signed value")]
+    #[error("unexpected negative sign for unsigned value")]
     UnexpectedSigned,
+
+    #[error("integers cannot start with '0' unless they are 0")]
+    UnexpectedZeroPrefix,
 
     #[error("Utf8Error: {0}")]
     Utf8Error(#[from] std::str::Utf8Error),
@@ -85,11 +91,7 @@ mod test {
         let val: u64 = from_bytes(b"i1234567890e").unwrap();
         assert_eq!(1234567890, val);
 
-        // TODO: check leading ZERO
-        // TODO: check leading negative
-        // TODO: check empty digits
         // TODO: check overflow
-        // TODO: test missing 'e'
     }
 
     #[test]
@@ -105,9 +107,53 @@ mod test {
     }
 
     #[test]
+    fn test_missing_e() {
+        assert_eq!(Error::Eof, from_bytes::<u32>(b"i56").unwrap_err(),);
+        assert_eq!(Error::Eof, from_bytes::<i32>(b"i-65").unwrap_err(),);
+    }
+
+    #[test]
+    fn test_empty_digits() {
+        assert_eq!(
+            Error::NoDigitsInNumber,
+            from_bytes::<u32>(b"ie").unwrap_err(),
+        );
+        assert_eq!(
+            Error::NoDigitsInNumber,
+            from_bytes::<i32>(b"ie").unwrap_err(),
+        );
+    }
+
+    #[test]
     fn test_sign_mismatch() {
         // u16 can't be negative.
         assert!(from_bytes::<u16>(b"i-7e").is_err());
+    }
+
+    #[test]
+    fn test_leading_zero() {
+        assert_eq!(
+            Error::UnexpectedZeroPrefix,
+            from_bytes::<u16>(b"i05e").unwrap_err()
+        );
+        assert_eq!(
+            Error::UnexpectedZeroPrefix,
+            from_bytes::<i16>(b"i-05e").unwrap_err()
+        );
+
+        // Multiple zeros are not allowed.
+        assert_eq!(
+            Error::UnexpectedZeroPrefix,
+            from_bytes::<i16>(b"i00e").unwrap_err()
+        );
+    }
+
+    #[test]
+    fn test_leading_negative_in_unsigned() {
+        assert_eq!(
+            Error::Message("invalid value: integer `-5`, expected u16".to_string()),
+            from_bytes::<u16>(b"i-5e").unwrap_err()
+        );
     }
 
     #[test]

@@ -55,15 +55,31 @@ impl<'de> Deserializer<'de> {
 
     // parse raw_integer should NOT check/consume the terminating 'e'
     fn parse_raw_integer(&mut self) -> Result<u64> {
-        // TODO: detect unexpected '0' prefix.
         // TODO: detect empty string.
         let mut val = 0u64;
+        let mut leading_zero = false;
+        let mut got_digit = false;
         loop {
             let b = self.peek_byte()?;
             if !b.is_ascii_digit() {
                 break;
             }
+            if b == b'0' {
+                if val == 0 {
+                    if leading_zero {
+                        return Err(Error::UnexpectedZeroPrefix);
+                    }
+                    leading_zero = true;
+                }
+            }
+            got_digit = true;
             val = val * 10 + (self.next_byte()? - b'0') as u64
+        }
+        if val != 0 && leading_zero {
+            return Err(Error::UnexpectedZeroPrefix);
+        }
+        if !got_digit {
+            return Err(Error::NoDigitsInNumber);
         }
         Ok(val)
     }
@@ -104,23 +120,6 @@ impl<'de> Deserializer<'de> {
             return Err(Error::ExpectedNumEnd);
         }
         Ok(multiplier * uval as i64)
-        // // TODO: do this with parse_raw_integer
-        // // TODO: detect unexpected '0' prefix.
-        // // TODO: detect empty string.
-        // // TODO: check for overflow.
-        // let mut val = 0i64;
-        // loop {
-        //     let b = self.peek_byte();
-        //     if b.is_err() {
-        //         if let Err(Error::Eof) = b {
-        //             break;
-        //         } else {
-        //             b?;
-        //         }
-        //     }
-        //     val = val * 10 + (self.next_byte()? - b'0') as i64
-        // }
-        // Ok(multiplier * val)
     }
 }
 
@@ -153,21 +152,21 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_bool(self.parse_unsigned()? != 0)
     }
 
-    fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_f32<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
         todo!()
     }
 
-    fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_f64<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
         todo!()
     }
 
-    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_char<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
@@ -209,21 +208,21 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_some(self)
     }
 
-    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_unit<V>(self, _visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
         todo!()
     }
 
-    fn deserialize_unit_struct<V>(self, name: &'static str, visitor: V) -> Result<V::Value>
+    fn deserialize_unit_struct<V>(self, _name: &'static str, _visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
         todo!()
     }
 
-    fn deserialize_newtype_struct<V>(self, name: &'static str, visitor: V) -> Result<V::Value>
+    fn deserialize_newtype_struct<V>(self, _name: &'static str, _visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
@@ -246,7 +245,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         Ok(value)
     }
 
-    fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value>
+    fn deserialize_tuple<V>(self, _len: usize, _visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
@@ -255,9 +254,9 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
     fn deserialize_tuple_struct<V>(
         self,
-        name: &'static str,
-        len: usize,
-        visitor: V,
+        _name: &'static str,
+        _len: usize,
+        _visitor: V,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -295,9 +294,9 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
     fn deserialize_enum<V>(
         self,
-        name: &'static str,
-        variants: &'static [&'static str],
-        visitor: V,
+        _name: &'static str,
+        _variants: &'static [&'static str],
+        _visitor: V,
     ) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
