@@ -1,288 +1,271 @@
-mod base;
-mod serbe;
+use thiserror::Error as ThisError;
 
-pub use base::BEError;
-pub use base::BEReader;
-pub use base::BEValue;
+mod de;
+mod ser;
 
-pub type Result<T> = std::result::Result<T, BEError>;
+#[derive(Debug, ThisError, PartialEq)]
+pub enum SerbeError {
+    #[error("error from serde: {0}")]
+    Message(String),
+
+    #[error("reached end of input before finishing")]
+    Eof,
+
+    #[error("expected a 'l' to start the list")]
+    ExpectedList,
+
+    #[error("expected a 'e' to end the list")]
+    ExpectedListEnd,
+
+    #[error("expected a 'e' to end the number")]
+    ExpectedNumEnd,
+
+    #[error("expected a 'd' to start the map")]
+    ExpectedMap,
+
+    #[error("expected a 'e' to end the map")]
+    ExpectedMapEnd,
+
+    #[error("expected colon, ':', to separate length from bytes. Found {0}")]
+    MissingColon(u8),
+
+    #[error("every number must have at least one digit")]
+    NoDigitsInNumber,
+
+    #[error("trailing input remains after deserializing")]
+    TrailingInput,
+
+    #[error("unrecognized prefix character, '{0}'")]
+    UnrecognizedPrefix(u8),
+
+    #[error("expected {1}, found: {0}")]
+    UnexpectedPrefix(char, char),
+
+    #[error("unexpected negative sign for unsigned value")]
+    UnexpectedSigned,
+
+    #[error("integers cannot start with '0' unless they are 0")]
+    UnexpectedZeroPrefix,
+
+    #[error("Utf8Error: {0}")]
+    Utf8Error(#[from] std::str::Utf8Error),
+}
+
+impl serde::de::Error for SerbeError {
+    fn custom<T>(msg: T) -> Self
+    where
+        T: std::fmt::Display,
+    {
+        SerbeError::Message(msg.to_string())
+    }
+}
+
+pub type Error = SerbeError;
+pub type Result<T> = std::result::Result<T, Error>;
+
+pub use de::from_bytes;
 
 #[cfg(test)]
-mod tests {
+mod test {
     use super::*;
-    use std::io::Read;
+    use serde::Deserialize;
 
-    macro_rules! assert_error0 {
-        ($e:expr, $p:path) => {
-            match $e {
-                Err($p) => {}
-                _ => {
-                    assert!(false)
-                }
-            }
-        };
-    }
+    #[test]
+    fn test_bool() {
+        let val: bool = from_bytes(b"i0e").unwrap();
+        assert_eq!(false, val);
 
-    macro_rules! assert_error1 {
-        ($e:expr, $p:path, $v:expr) => {
-            match $e {
-                Err($p(v)) => {
-                    assert_eq!(v, $v);
-                }
-                _ => {
-                    assert!(false);
-                }
-            }
-        };
-    }
+        let val: bool = from_bytes(b"i1e").unwrap();
+        assert_eq!(true, val);
 
-    macro_rules! assert_error2 {
-        ($e:expr, $p:path, $v1:expr, $v2:expr) => {
-            match $e {
-                Err($p(v1, v2)) => {
-                    assert_eq!(v1, $v1);
-                    assert_eq!(v2, $v2);
-                }
-                _ => {
-                    assert!(false)
-                }
-            }
-        };
-    }
-
-    fn reader(s: &'static str) -> BEReader<impl Read> {
-        BEReader::new(s.as_bytes())
-    }
-
-    fn value_for_string(s: &str) -> BEValue {
-        BEReader::new(s.as_bytes()).next_value().unwrap().unwrap()
-    }
-
-    fn make_string() -> BEValue {
-        value_for_string("4:quux")
-    }
-
-    fn make_integer() -> BEValue {
-        value_for_string("i42e")
-    }
-
-    fn make_empty_list() -> BEValue {
-        value_for_string("le")
-    }
-
-    fn make_empty_dict() -> BEValue {
-        value_for_string("de")
+        let val: bool = from_bytes(b"i32e").unwrap();
+        assert_eq!(true, val);
     }
 
     #[test]
-    fn test_empty() {
-        let mut ber = BEReader::new("".as_bytes());
-        let value = ber.next_value().unwrap();
+    fn test_unsigned() {
+        let val: u8 = from_bytes(b"i5e").unwrap();
+        assert_eq!(5, val);
+        let val: u16 = from_bytes(b"i55e").unwrap();
+        assert_eq!(55, val);
+        let val: u64 = from_bytes(b"i1234567890e").unwrap();
+        assert_eq!(1234567890, val);
 
-        assert!(value.is_none());
+        // TODO: check overflow
     }
 
     #[test]
-    fn test_read_integer() {
-        let mut ber = reader("i45e");
-        let value = ber.next_value().unwrap();
-        assert_eq!(value.unwrap().integer(), 45);
-
-        let mut ber = reader("i-45e");
-        let value = ber.next_value().unwrap();
-        assert_eq!(value.unwrap().integer(), -45);
-
-        let mut ber = reader("i0e");
-        let value = ber.next_value().unwrap();
-        assert_eq!(value.unwrap().integer(), 0);
+    fn test_signed() {
+        let val: i8 = from_bytes(b"i5e").unwrap();
+        assert_eq!(5, val);
+        let val: i16 = from_bytes(b"i55e").unwrap();
+        assert_eq!(55, val);
+        let val: i16 = from_bytes(b"i-55e").unwrap();
+        assert_eq!(-55, val);
+        let val: i64 = from_bytes(b"i-1234567890e").unwrap();
+        assert_eq!(-1234567890, val);
     }
 
     #[test]
-    fn test_integer_missing_e() {
-        // Missing suffix.
-        let mut ber = reader("i32");
-        let value = ber.next_value();
-        assert_error0!(value, BEError::EOFError);
+    fn test_missing_e() {
+        assert_eq!(Error::Eof, from_bytes::<u32>(b"i56").unwrap_err(),);
+        assert_eq!(Error::Eof, from_bytes::<i32>(b"i-65").unwrap_err(),);
+    }
 
-        // Missing suffix with more chars.
-        let mut ber = reader("i32i33e");
-        let value = ber.next_value();
-        assert_error2!(value, BEError::MissingSuffixError, 'i' as u8, 'e' as u8);
+    #[test]
+    fn test_empty_digits() {
+        assert_eq!(
+            Error::NoDigitsInNumber,
+            from_bytes::<u32>(b"ie").unwrap_err(),
+        );
+        assert_eq!(
+            Error::NoDigitsInNumber,
+            from_bytes::<i32>(b"ie").unwrap_err(),
+        );
+    }
+
+    #[test]
+    fn test_sign_mismatch() {
+        // u16 can't be negative.
+        assert!(from_bytes::<u16>(b"i-7e").is_err());
     }
 
     #[test]
     fn test_leading_zero() {
-        // Leading zero not allowed.
-        let mut ber = reader("i032e");
-        let value = ber.next_value();
-        assert_error0!(value, BEError::LeadZeroError);
+        assert_eq!(
+            Error::UnexpectedZeroPrefix,
+            from_bytes::<u16>(b"i05e").unwrap_err()
+        );
+        assert_eq!(
+            Error::UnexpectedZeroPrefix,
+            from_bytes::<i16>(b"i-05e").unwrap_err()
+        );
+
+        // Multiple zeros are not allowed.
+        assert_eq!(
+            Error::UnexpectedZeroPrefix,
+            from_bytes::<i16>(b"i00e").unwrap_err()
+        );
     }
 
     #[test]
-    fn test_negative_zero() {
-        let mut ber = reader("i-0e");
-        let value = ber.next_value();
-        assert_error0!(value, BEError::NegativeZeroError);
+    fn test_leading_negative_in_unsigned() {
+        assert_eq!(
+            Error::Message("invalid value: integer `-5`, expected u16".to_string()),
+            from_bytes::<u16>(b"i-5e").unwrap_err()
+        );
     }
 
     #[test]
-    fn test_read_string() {
-        // Empty string
-        let mut ber = BEReader::new("0:".as_bytes());
-        let value = ber.next_value().unwrap();
-        assert_eq!(value.unwrap().string(), "");
+    fn test_string() {
+        let val: String = from_bytes(b"4:yarn").unwrap();
+        assert_eq!(val, "yarn");
 
-        // One digit length
-        let mut ber = BEReader::new("7:unicorn".as_bytes());
-        let value = ber.next_value().unwrap();
-        assert_eq!(value.unwrap().string(), "unicorn");
-
-        // Two digit length
-        let mut ber = BEReader::new("12:unicornfarts".as_bytes());
-        let value = ber.next_value().unwrap();
-        assert_eq!(value.unwrap().string(), "unicornfarts");
-
-        // String longer than length
-        let mut ber = BEReader::new("11:unicornfarts".as_bytes());
-        let value = ber.next_value().unwrap();
-        assert_eq!(value.unwrap().string(), "unicornfart");
-
-        // String containing a number
-        let mut ber = reader("4:1234");
-        let value = ber.next_value().unwrap().unwrap();
-        assert_eq!(value.string(), "1234");
+        let val: String = from_bytes(b"0:").unwrap();
+        assert_eq!(val, "");
     }
 
     #[test]
     fn test_missing_colon() {
-        let mut ber = reader("3foo");
-        let value = ber.next_value();
-        assert_error2!(value, BEError::MissingSeparatorError, 'f' as u8, ':' as u8);
+        assert_eq!(
+            Error::MissingColon(b'l'),
+            from_bytes::<&str>(b"5lucky").unwrap_err()
+        );
     }
 
     #[test]
-    fn test_negative_string_length() {
-        let mut ber = reader("-10:impossible_");
+    fn test_str() {
+        let val: &str = from_bytes(b"4:yarn").unwrap();
+        assert_eq!(val, "yarn");
 
-        // The beencode format makes this impossible, so we have to test it with the
-        // private helper function.
-        let value = ber.read_string();
-
-        assert_error1!(value, BEError::NegativeStringLength, -10);
+        let val: &str = from_bytes(b"0:").unwrap();
+        assert_eq!(val, "");
     }
 
     #[test]
-    fn test_read_list() {
-        // empty list
-        let mut ber = reader("le");
-        let value = ber.next_value().unwrap().unwrap();
-        assert_eq!(value.len(), 0);
+    fn test_arr() {
+        let val: Vec<u32> = from_bytes(b"li1ei0ei32ei45ei0ei4ee").unwrap();
+        assert_eq!(vec![1u32, 0, 32, 45, 0, 4], val);
 
-        let mut ber = reader("l3:fooe");
-        let value = ber.next_value().unwrap().unwrap();
-        assert_eq!(value.len(), 1);
+        let val: Vec<u32> = from_bytes(b"le").unwrap();
+        assert!(val.is_empty());
 
-        let mut ber = reader("li32ei45ee");
-        let value = ber.next_value().unwrap().unwrap();
-        assert_eq!(value.len(), 2);
-
-        let mut ber = reader("li-88e4:quuxi23ee");
-        let value = ber.next_value().unwrap().unwrap();
-        assert_eq!(value.len(), 3);
-        assert_eq!(value[0].integer(), -88);
-        assert_eq!(value[1].string(), "quux");
-        assert_eq!(value[2].integer(), 23);
+        let val: Vec<&str> = from_bytes(b"l3:foo6:foobar4:quuxe").unwrap();
+        assert_eq!(vec!["foo", "foobar", "quux"], val);
     }
 
     #[test]
-    fn test_read_dict() {
-        // empty test_read_dict
-        let mut ber = reader("de");
-        let value = ber.next_value().unwrap().unwrap();
-        assert_eq!(value.len(), 0);
-
-        let mut ber = reader("d3:one4:worde");
-        let value = ber.next_value().unwrap().unwrap();
-        assert_eq!(value.len(), 1);
-
-        let mut ber = reader("d2:toi32e3:two5:wordse");
-        let value = ber.next_value().unwrap().unwrap();
-        assert_eq!(value.len(), 2);
-        assert_eq!(value["two"].string(), "words");
-        assert_eq!(value["to"].integer(), 32);
+    fn test_missing_l() {
+        assert_eq!(
+            Error::ExpectedList,
+            from_bytes::<Vec<u16>>(b"i0ei0ei0ee").unwrap_err()
+        );
     }
 
     #[test]
-    fn test_keys_out_of_order() {
-        let mut ber = reader("d3:zzz5:words3:aaai7ee");
-        let value = ber.next_value();
-
-        assert_error1!(value, BEError::KeysOutOfOrder, "aaa");
+    fn test_missing_list_e() {
+        // Missing 'e' manifests as EOF because the list is never terminated.
+        assert_eq!(
+            Error::Eof,
+            from_bytes::<Vec<u16>>(b"li0ei0ei0e").unwrap_err()
+        );
     }
 
     #[test]
-    fn test_missing_value() {
-        let mut ber = reader("d3:two5:words7:missinge");
-        let value = ber.next_value();
+    fn test_struct() {
+        #[derive(Deserialize, PartialEq, Debug)]
+        struct TestStruct {
+            inteight: i8,
+            s: String,
+        }
 
-        assert_error1!(value, BEError::MissingValueError, "missing");
+        let val: TestStruct = from_bytes(b"d8:inteighti33e1:s4:worde").unwrap();
+        assert_eq!(
+            TestStruct {
+                inteight: 33,
+                s: "word".to_string(),
+            },
+            val
+        );
+
+        // TODO: test ignored fields
     }
 
     #[test]
-    fn test_non_string_key() {
-        let mut ber = reader("di666e5:words7:secondei42ee");
-        let value = ber.next_value();
+    fn test_structs_with_option() {
+        #[derive(Deserialize, PartialEq, Debug)]
+        struct TestWithOption<'a> {
+            i: Option<u8>,
+            s: Option<&'a str>,
+        }
+        let val: TestWithOption = from_bytes(b"de").unwrap();
+        assert_eq!(TestWithOption { i: None, s: None }, val);
 
-        assert_error1!(value, BEError::KeyNotString, BEValue::BEInteger(666));
-    }
+        let val: TestWithOption = from_bytes(b"d1:ii8ee").unwrap();
+        assert_eq!(
+            TestWithOption {
+                i: Some(8),
+                s: None
+            },
+            val
+        );
 
-    #[test]
-    fn test_list_of_lists() {
-        let mut ber = reader("ll5:mooreel3:bar4:quuxee");
-        let value = ber.next_value().unwrap().unwrap();
-        assert_eq!(2, value.len());
+        let val: TestWithOption = from_bytes(b"d1:s6:floppye").unwrap();
+        assert_eq!(
+            TestWithOption {
+                i: None,
+                s: Some("floppy")
+            },
+            val
+        );
 
-        assert_eq!(value[0][0].string(), "moore");
-        assert_eq!(value[1][0].string(), "bar");
-        assert_eq!(value[1][1].string(), "quux");
-    }
-
-    #[test]
-    fn test_is_string() {
-        assert!(make_string().is_string());
-        assert!(!make_integer().is_string());
-        assert!(!make_empty_list().is_string());
-        assert!(!make_empty_dict().is_string());
-    }
-
-    #[test]
-    fn test_is_integer() {
-        assert!(!make_string().is_integer());
-        assert!(make_integer().is_integer());
-        assert!(!make_empty_list().is_integer());
-        assert!(!make_empty_dict().is_integer());
-    }
-
-    #[test]
-    fn test_is_list() {
-        assert!(!make_string().is_list());
-        assert!(!make_integer().is_list());
-        assert!(make_empty_list().is_list());
-        assert!(!make_empty_dict().is_list());
-    }
-
-    #[test]
-    fn test_is_dict() {
-        assert!(!make_string().is_dict());
-        assert!(!make_integer().is_dict());
-        assert!(!make_empty_list().is_dict());
-        assert!(make_empty_dict().is_dict());
-    }
-
-    #[test]
-    fn test_illegal_prefix() {
-        let mut ber = reader("y");
-        let result = ber.next_value();
-        assert_error1!(result, BEError::UnexpectedCharError, 'y');
+        let val: TestWithOption = from_bytes(b"d1:ii34e1:s6:floppye").unwrap();
+        assert_eq!(
+            TestWithOption {
+                i: Some(34),
+                s: Some("floppy")
+            },
+            val
+        );
     }
 }

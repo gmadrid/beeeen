@@ -53,7 +53,8 @@ impl<'de> Deserializer<'de> {
         Ok(std::str::from_utf8(bytes)?)
     }
 
-    // parse raw_integer should NOT check/consume the terminating 'e'
+    // Because we also use this to parse strings,
+    // parse raw_integer should NOT check/consume the terminating 'e'.
     fn parse_raw_integer(&mut self) -> Result<u64> {
         let mut val = 0u64;
         let mut leading_zero = false;
@@ -63,13 +64,11 @@ impl<'de> Deserializer<'de> {
             if !b.is_ascii_digit() {
                 break;
             }
-            if b == b'0' {
-                if val == 0 {
-                    if leading_zero {
-                        return Err(Error::UnexpectedZeroPrefix);
-                    }
-                    leading_zero = true;
+            if b == b'0' && val == 0 {
+                if leading_zero {
+                    return Err(Error::UnexpectedZeroPrefix);
                 }
+                leading_zero = true;
             }
             got_digit = true;
             val = val * 10 + (self.next_byte()? - b'0') as u64
