@@ -163,5 +163,7 @@ mod test {
             },
             val
         );
+
+        let val: TestStruct = from_bytes(b"d4:fakei0e8:inteighti33e1:s4:worde").unwrap();
     }
 }

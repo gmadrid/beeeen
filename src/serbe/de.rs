@@ -134,6 +134,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: de::Visitor<'de>,
     {
         match self.peek_byte()? {
+            // TODO: match all data types here.
             b'i' => {
                 if self.bytes[1] == b'-' {
                     visitor.visit_i64(self.parse_signed()?)
@@ -274,7 +275,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         }
 
         let value = visitor.visit_map(Map::new(&mut self))?;
-        println!("ITAIL: {:?}", std::str::from_utf8(self.bytes).unwrap());
 
         if self.next_byte()? != b'e' {
             return Err(Error::ExpectedMapEnd);
@@ -284,8 +284,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
     fn deserialize_struct<V>(
         self,
-        name: &'static str,
-        fields: &'static [&'static str],
+        _name: &'static str,
+        _fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value>
     where
@@ -310,7 +310,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: de::Visitor<'de>,
     {
-        println!("XXX: {:?}", std::str::from_utf8(self.bytes).unwrap());
         self.deserialize_str(visitor)
     }
 
@@ -318,7 +317,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: de::Visitor<'de>,
     {
-        todo!()
+        // TODO: write a unit test for this.
+        self.deserialize_any(visitor)
     }
 }
 
@@ -367,7 +367,6 @@ impl<'de, 'a> MapAccess<'de> for Map<'a, 'de> {
         if self.de.peek_byte()? == b'e' {
             return Ok(None);
         }
-        println!("KTAIL: {:?}", std::str::from_utf8(self.de.bytes).unwrap());
 
         seed.deserialize(&mut *self.de).map(Some)
     }
@@ -376,13 +375,7 @@ impl<'de, 'a> MapAccess<'de> for Map<'a, 'de> {
     where
         V: de::DeserializeSeed<'de>,
     {
-        println!("VTAIL: {:?}", std::str::from_utf8(self.de.bytes).unwrap());
         // TODO: should I check for 'e' here?
-        let r = seed.deserialize(&mut *self.de);
-        println!(
-            "VTAILPOST: {:?}",
-            std::str::from_utf8(self.de.bytes).unwrap()
-        );
-        r
+        seed.deserialize(&mut *self.de)
     }
 }
