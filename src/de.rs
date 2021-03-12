@@ -130,8 +130,9 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: de::Visitor<'de>,
     {
+        println!("ANY:[{}] {:?}", self.bytes.len(), &self.bytes[..20]);
         match self.peek_byte()? {
-            // TODO: match all data types here.
+            b'd' => self.deserialize_map(visitor),
             b'i' => {
                 if self.bytes[1] == b'-' {
                     visitor.visit_i64(self.parse_signed()?)
@@ -139,6 +140,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
                     visitor.visit_u64(self.parse_unsigned()?)
                 }
             }
+            b'l' => self.deserialize_seq(visitor),
+            b'0'..=b'9' => self.deserialize_str(visitor),
             mismatch => Err(Error::UnrecognizedPrefix(mismatch)),
         }
     }
@@ -313,6 +316,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: de::Visitor<'de>,
     {
+        println!("IGNORING",);
         // TODO: write a unit test for this.
         self.deserialize_any(visitor)
     }
