@@ -163,8 +163,14 @@ mod test {
 
         let val: String = from_bytes(b"0:").unwrap();
         assert_eq!(val, "");
+    }
 
-        // TODO check missing colon
+    #[test]
+    fn test_missing_colon() {
+        assert_eq!(
+            Error::MissingColon(b'l'),
+            from_bytes::<&str>(b"5lucky").unwrap_err()
+        );
     }
 
     #[test]
@@ -174,8 +180,6 @@ mod test {
 
         let val: &str = from_bytes(b"0:").unwrap();
         assert_eq!(val, "");
-
-        // TODO check missing colon
     }
 
     #[test]
@@ -188,9 +192,23 @@ mod test {
 
         let val: Vec<&str> = from_bytes(b"l3:foo6:foobar4:quuxe").unwrap();
         assert_eq!(vec!["foo", "foobar", "quux"], val);
+    }
 
-        // TODO: test missing 'l'
-        // TODO: test missing 'e'
+    #[test]
+    fn test_missing_l() {
+        assert_eq!(
+            Error::ExpectedList,
+            from_bytes::<Vec<u16>>(b"i0ei0ei0ee").unwrap_err()
+        );
+    }
+
+    #[test]
+    fn test_missing_list_e() {
+        // Missing 'e' manifests as EOF because the list is never terminated.
+        assert_eq!(
+            Error::Eof,
+            from_bytes::<Vec<u16>>(b"li0ei0ei0e").unwrap_err()
+        );
     }
 
     #[test]

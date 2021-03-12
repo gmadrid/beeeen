@@ -172,7 +172,6 @@ where
 
     // This is only pub(crate) so that we can make a unit test that uses it.
     // Do NOT use it.
-    // TODO: move the tests into this file.
     pub(crate) fn read_string(&mut self) -> Result<BEValue> {
         let len = self.read_raw_integer()?;
         if len < 0 {

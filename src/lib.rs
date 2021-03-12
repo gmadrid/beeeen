@@ -83,11 +83,6 @@ mod tests {
     }
 
     #[test]
-    fn test_read_error() {
-        // TODO: write this.
-    }
-
-    #[test]
     fn test_read_integer() {
         let mut ber = reader("i45e");
         let value = ber.next_value().unwrap();

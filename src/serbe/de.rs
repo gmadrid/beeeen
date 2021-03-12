@@ -55,7 +55,6 @@ impl<'de> Deserializer<'de> {
 
     // parse raw_integer should NOT check/consume the terminating 'e'
     fn parse_raw_integer(&mut self) -> Result<u64> {
-        // TODO: detect empty string.
         let mut val = 0u64;
         let mut leading_zero = false;
         let mut got_digit = false;
@@ -373,7 +372,6 @@ impl<'de, 'a> MapAccess<'de> for Map<'a, 'de> {
     where
         V: de::DeserializeSeed<'de>,
     {
-        // TODO: should I check for 'e' here?
         seed.deserialize(&mut *self.de)
     }
 }
