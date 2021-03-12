@@ -1,10 +1,9 @@
-mod beerror;
-mod bereader;
-mod bevalue;
+mod base;
+mod serbe;
 
-pub use beerror::BEError;
-pub use bereader::BEReader;
-pub use bevalue::BEValue;
+pub use base::BEError;
+pub use base::BEReader;
+pub use base::BEValue;
 
 pub type Result<T> = std::result::Result<T, BEError>;
 

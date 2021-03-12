@@ -1,4 +1,4 @@
-use crate::BEValue;
+use super::BEValue;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
