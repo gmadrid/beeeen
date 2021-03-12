@@ -166,4 +166,42 @@ mod test {
 
         let val: TestStruct = from_bytes(b"d4:fakei0e8:inteighti33e1:s4:worde").unwrap();
     }
+
+    #[test]
+    fn test_structs_with_option() {
+        #[derive(Deserialize, PartialEq, Debug)]
+        struct TestWithOption<'a> {
+            i: Option<u8>,
+            s: Option<&'a str>,
+        }
+        let val: TestWithOption = from_bytes(b"de").unwrap();
+        assert_eq!(TestWithOption { i: None, s: None }, val);
+
+        let val: TestWithOption = from_bytes(b"d1:ii8ee").unwrap();
+        assert_eq!(
+            TestWithOption {
+                i: Some(8),
+                s: None
+            },
+            val
+        );
+
+        let val: TestWithOption = from_bytes(b"d1:s6:floppye").unwrap();
+        assert_eq!(
+            TestWithOption {
+                i: None,
+                s: Some("floppy")
+            },
+            val
+        );
+
+        let val: TestWithOption = from_bytes(b"d1:ii34e1:s6:floppye").unwrap();
+        assert_eq!(
+            TestWithOption {
+                i: Some(34),
+                s: Some("floppy")
+            },
+            val
+        );
+    }
 }
